@@ -1,0 +1,76 @@
+{
+  "name": "premake-debugger",
+  "displayName": "premake-debugger",
+  "description": "a debugger extension for premake to debug premake scripts",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "premake debugger extension Settings",
+      "properties": {
+        "premake.port": {
+          "type": "number",
+          "default": 8172,
+          "description": "Port number for connecting to the premake MobDebug server.",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "premake.host": {
+          "type": "string",
+          "default": "localhost",
+          "description": "Host address for the premake MobDebug server."
+        },
+        "premake.timeout": {
+          "type": "number",
+          "default": 5000,
+          "description": "Timeout duration (in ms) for sending commands.",
+          "minimum": 1000,
+          "maximum": 10000
+        },
+        "premake.dev": {
+          "type": "string",
+          "enum": ["normal", "development"],
+          "default": "normal",
+          "description": "Select the mode of the extension. 'normal' , 'development' for dev mode. (adding features to premake)"
+        },
+        "premake.dev.srcloc":{
+          "type": "string",
+          "description": "location of the src directory of premake (only in dev mode!)",
+          "default": "./src",
+          "when": "premake.dev == 'development'"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.9",
+    "@types/node": "20.x",
+    "@types/vscode": "^1.95.0",
+    "@typescript-eslint/eslint-plugin": "^8.10.0",
+    "@typescript-eslint/parser": "^8.7.0",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1",
+    "eslint": "^9.13.0",
+    "typescript": "^5.6.3",
+    "@vscode/debugadapter": "^1.68.0"
+
+  }
+}
