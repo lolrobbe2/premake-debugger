@@ -7,13 +7,40 @@
     "vscode": "^1.95.0"
   },
   "categories": [
+    "Debuggers",
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onLanguage:lua"
+  ],
   "main": "./out/extension.js",
   "contributes": {
-    "commands": [
+    "languages": [
+    {
+      "id": "lua",
+      "extensions": [".lua"],
+      "aliases": ["Lua"]
+    }
     ],
+    "debuggers": [
+        {
+          "type": "premake",
+          "label": "launch premake",
+          "configurationAttributes": {
+            "premake.port": {
+              "type": "number",
+              "default": 8172,
+              "description": "Port number for connecting to the premake MobDebug server."
+            },
+            "premake.host": {
+              "type": "string",
+              "default": "localhost",
+              "description": "Host address for the premake MobDebug server."
+            }
+          }
+        }
+    ],
+    "commands": [],
     "configuration": {
       "type": "object",
       "title": "premake debugger extension Settings",
@@ -39,15 +66,35 @@
         },
         "premake.dev": {
           "type": "string",
-          "enum": ["normal", "development"],
+          "enum": [
+            "normal",
+            "development"
+          ],
           "default": "normal",
           "description": "Select the mode of the extension. 'normal' , 'development' for dev mode. (adding features to premake)"
         },
-        "premake.dev.srcloc":{
+        "premake.dev.srcloc": {
           "type": "string",
           "description": "location of the src directory of premake (only in dev mode!)",
-          "default": "./src",
-          "when": "premake.dev == 'development'"
+          "default": "./src"
+        },
+        "premake.dev.mode": {
+          "type": "string",
+          "default": "debug",
+          "enum": [
+            "debug",
+            "release"
+          ],
+          "when": "premake.dev === 'development'",
+
+          "description": "the launch mode (run release or debug build)"
+        },
+        "premake.dev.binloc": {
+          "type": "string",
+          "default": "./bin",
+          "description": "the location of the premake bin folder",
+          "when": "config.premake.dev == 'development'"
+
         }
       }
     }
@@ -66,11 +113,13 @@
     "@types/vscode": "^1.95.0",
     "@typescript-eslint/eslint-plugin": "^8.10.0",
     "@typescript-eslint/parser": "^8.7.0",
+    "@vscode/debugadapter": "^1.68.0",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1",
+    "await-notify": "^1.0.1",
     "eslint": "^9.13.0",
     "typescript": "^5.6.3",
-    "@vscode/debugadapter": "^1.68.0"
-
+    "@vscode/debugprotocol": "^1.68.0",
+    "vscode-debugadapter": "^1.51.0"
   }
 }
