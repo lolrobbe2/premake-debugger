@@ -1,6 +1,7 @@
 import { error } from 'console';
 import * as net from 'net';
 import * as vscode from 'vscode';
+import * as commands from './commands/mod';
 export enum Result {
     ok,
     failure,
@@ -29,29 +30,26 @@ export class MobDebug {
 
     public async setBreakpoint(file: string, line: number): Promise<Result> {
         const command: string = `SETB ${file}:${line}\n`;
-        const result:string = await this.sendCommand(command);
+        const result:string = await this.sendCommand(new commands.SetBreakpointCommand(file, line));
         return Result.ok;
     }
     public async removeBreakpoint(file: string, line: number): Promise<Result> {
-        const command: string = `SETB ${file}:${line}\n`;
-        const result:string = await this.sendCommand(command);
+       // const result:string = await this.sendCommand();
         return Result.ok;
     }
     public async step():Promise<Result> {
-        const command: string = `STEP\n`;
-        const result:string = await this.sendCommand(command);
+        const result:string = await this.sendCommand(new commands.StepCommand());
         return Result.ok;
     }
     public async run(): Promise<String> {
-        const command: string = `RUN\n`;
-        const result:string = await this.sendCommand(command);
+        const result:string = await this.sendCommand(new commands.RunCommand());
         return result;
     }
-    private async sendCommand(command: string): Promise<string> {
+    private async sendCommand(command: commands.Command): Promise<string> {
         return new Promise((resolve, reject) => {
-            this.client.write(command, (err) => {
+            this.client.write(command.toString(), (err) => {
                 if (err) {
-                    error(`Failed to send command: ${err.message}`);
+                    error(`Failed to send command: ${command.toVerboseString()}, reason:${err.message}`);
                 }
             });
 

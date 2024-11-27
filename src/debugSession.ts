@@ -3,9 +3,12 @@ import {
 	LoggingDebugSession
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
+import { ChildProcessWithoutNullStreams } from 'child_process';
 import * as vscode from 'vscode';
+import { PremakeConfig } from './config';
 import { DebugServer } from './mobdebug/DebugServer';
 import { MobDebug } from './mobdebug/Mobdebug';
+
 interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
 	/** An absolute path to the "program" to debug. */
 	program: string;
@@ -31,6 +34,9 @@ export class PremakeDebugSession extends LoggingDebugSession {
 	private _configurationDoneResolve: () => void = () => {};
 	readonly eventListener: DebugServer;
 	private _mobDebugSession:MobDebug | null = null;
+
+	private _premakeProcess?:ChildProcessWithoutNullStreams = undefined;
+
     public constructor(emitter: DebugServer) {
 		super("mock-debug.txt");
         this.setDebuggerLinesStartAt1(false);
@@ -67,6 +73,9 @@ export class PremakeDebugSession extends LoggingDebugSession {
 		response.body.supportTerminateDebuggee = true;
 		response.body.supportsFunctionBreakpoints = true;
 		response.body.supportsDelayedStackTraceLoading = true;
+		response.body.supportsBreakpointLocationsRequest = true;
+		response.body.supportsTerminateRequest = true;
+
         // since this debug adapter can accept configuration requests like 'setBreakpoint' at any time,
 		// we request them early by sending an 'initializeRequest' to the frontend.
 		// The frontend will end the configuration sequence by calling 'configurationDone' request.
@@ -92,7 +101,22 @@ export class PremakeDebugSession extends LoggingDebugSession {
 		return this.launchRequest(response, args);
 	}
 	protected async launchRequest(response: DebugProtocol.LaunchResponse, args: ILaunchRequestArguments) {
+		
 		await this._configurationDone;
+		if(this._premakeProcess !== null) {
+			this._premakeProcess?.kill();
+		}
+
+		this._premakeProcess = new PremakeConfig().spawnPremake((err, success) => {
+			if (err) {
+				vscode.window.showErrorMessage(`Premake failed: ${err.message}`);
+				return;
+			}
+			if (success) {
+				vscode.window.showInformationMessage('Premake executed successfully.');
+			}
+		});	
+		this.sendResponse(response);
 		console.log("launched succesfuly");
 	}
 
@@ -126,12 +150,30 @@ export class PremakeDebugSession extends LoggingDebugSession {
 			this._mobDebugSession?.setBreakpoint(filename, breakpoint.line);
 		});
 	}
+	protected async cancelRequest(response: DebugProtocol.CancelResponse, args: DebugProtocol.CancelArguments, request?: DebugProtocol.Request): Promise<void> {
+		this._mobDebugSession?.stop();
+		this._mobDebugSession = null;
+		this._premakeProcess?.kill('SIGINT');
+		this._premakeProcess = undefined;
+
+		this.sendResponse(response);
+	}
+	protected async terminateRequest(response: DebugProtocol.TerminateResponse, args: DebugProtocol.TerminateArguments, request?: DebugProtocol.Request): Promise<void> {
+		this._mobDebugSession?.stop();
+		this._mobDebugSession = null;
+		this._premakeProcess?.kill('SIGINT');
+		this._premakeProcess = undefined;
+		this.sendResponse(response);
+
+	}
+
 	private async onSession(session: MobDebug): Promise<void> {
         console.log(`Session event received for: ${session}`);
 		if(this._mobDebugSession){
 			this._mobDebugSession.stop();
 		}
         this._mobDebugSession = session;
-		console.log(await this._mobDebugSession.run());
+		await this._mobDebugSession?.run();
+
     }
 }

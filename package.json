@@ -15,6 +15,11 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "breakpoints": [
+      {
+        "language": "lua"
+      }
+    ],
     "languages": [
     {
       "id": "lua",
@@ -73,10 +78,10 @@
           "default": "normal",
           "description": "Select the mode of the extension. 'normal' , 'development' for dev mode. (adding features to premake)"
         },
-        "premake.dev.srcloc": {
+        "premake.dev.rootloc": {
           "type": "string",
-          "description": "location of the src directory of premake (only in dev mode!)",
-          "default": "./src"
+          "description": "location of the directory root of premake (only in dev mode!)",
+          "default": "/."
         },
         "premake.dev.mode": {
           "type": "string",
