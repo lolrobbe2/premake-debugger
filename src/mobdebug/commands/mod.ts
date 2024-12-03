@@ -6,3 +6,4 @@ export { SetBreakpointCommand } from "./setBreakpointCommand";
 export { RemoveBreakpointCommand } from "./removeBreakpointCommand";
 export { BasedirCommand } from "./basedirCommand";
 export { LoadCommand } from "./loadCommand";
+export { StackCommand } from "./stackCommand";

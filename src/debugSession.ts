@@ -4,7 +4,8 @@ import {
 	InitializedEvent,
 	LoggingDebugSession,
 	Source,
-	StoppedEvent
+	StoppedEvent,
+	Thread
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
 import { ChildProcessWithoutNullStreams } from 'child_process';
@@ -49,6 +50,8 @@ export class PremakeDebugSession extends LoggingDebugSession {
 	private _breakpointsSet: Promise<void>;
     private _sessionReadyResolve: () => void = () => {};
 	private _breakpoints: Map<string,DebugProtocol.SourceBreakpoint> = new Map();
+	private _currentFile: string = "";
+	private _currentLine: number = 0;
 	private prefixes:string[] = [
 		"modules",
 		"src"
@@ -101,7 +104,6 @@ export class PremakeDebugSession extends LoggingDebugSession {
 		response.body.supportsDelayedStackTraceLoading = true;
 		response.body.supportsBreakpointLocationsRequest = true;
 		response.body.supportsTerminateRequest = true;
-
         // since this debug adapter can accept configuration requests like 'setBreakpoint' at any time,
 		// we request them early by sending an 'initializeRequest' to the frontend.
 		// The frontend will end the configuration sequence by calling 'configurationDone' request.
@@ -221,6 +223,35 @@ export class PremakeDebugSession extends LoggingDebugSession {
 		this.sendResponse(response);
 
 	}
+	protected async breakpointLocationsRequest(response: DebugProtocol.BreakpointLocationsResponse, args: DebugProtocol.BreakpointLocationsArguments, request?: DebugProtocol.Request): Promise<void>
+	{
+		const sourcePath = args.source?.path;
+        const startLine = args.line;
+        const endLine = args.endLine || startLine;
+
+        console.log(`Breakpoint locations request for ${sourcePath}, lines ${startLine} to ${endLine}`);
+
+        if (!sourcePath) {
+            response.body = { breakpoints: [] };
+            this.sendResponse(response);
+            return;
+        }
+
+        // Since breakpoints are assumed valid, directly generate locations
+        const breakpoints: DebugProtocol.BreakpointLocation[] = [];
+        for (let i = startLine; i <= endLine; i++) {
+            breakpoints.push({
+                line: i,
+                column: 1 // Assuming breakpoints are always at the start of the line
+            });
+        }
+
+        // Populate the response
+        response.body = { breakpoints };
+        response.success = true;
+		console.log("testing");
+		this.sendResponse(response);
+	}
 
 	private async onSession(session: MobDebug): Promise<void> {
         console.log(`Session event received for: ${session}`);
@@ -235,6 +266,14 @@ export class PremakeDebugSession extends LoggingDebugSession {
 		const matchingPrefix = prefixes.find(prefix => filename.startsWith(prefix));
 		return matchingPrefix ? filename.slice(matchingPrefix.length) : filename;
 	}
+	protected threadsRequest(response: DebugProtocol.ThreadsResponse): void {
+    response.body = {
+        threads: [
+            new Thread(PremakeDebugSession.threadID, "Main Thread")
+        ]
+    };
+    this.sendResponse(response);
+	}
 	private async onDebugSessionEvent(event: string): Promise<void> {
 		if(event.startsWith("202 Paused")) {
 			const match = event.match(/202 Paused (\S+) (\d+)/);
@@ -242,21 +281,14 @@ export class PremakeDebugSession extends LoggingDebugSession {
 				const filepath = match[1];
 				const line = parseInt(match[2], 10);
  				const fileName = path.basename(filepath);
+				console.log(`pause at file:${ fileName}, line:${ line}`);
+
 				const breakpointId = PremakeDebugSession.debugSession.generateBreakpointId(filepath, line);
-				const stoppedEvent: DebugProtocol.StoppedEvent = { 
-					event: 'stopped', body: 
-					{
-						reason: 'breakpoint', 
-						description: `Paused at ${fileName}:${line}`,
-						threadId: PremakeDebugSession.threadID,
-						allThreadsStopped: true, // Assuming all threads are stopped 
-						hitBreakpointIds: [breakpointId] // Including the numeric ID
-					},
-					seq: 0, // Sequence number, managed by Debug Adapter 
-					type: 'event' 
-				};
+				PremakeDebugSession.debugSession._currentFile = filepath;
+				PremakeDebugSession.debugSession._currentLine = line;
+				PremakeDebugSession.debugSession.sendEvent(new StoppedEvent("breakpoint",1));
 				PremakeDebugSession.debugSession.sendEvent(new BreakpointEvent('new',new Breakpoint(true,line,0,new Source(fileName,filepath))));
-				PremakeDebugSession.debugSession.sendEvent(stoppedEvent);
+
 			}
 			
 		} else if(event.startsWith("202 Paused")) {
@@ -264,6 +296,10 @@ export class PremakeDebugSession extends LoggingDebugSession {
 		} else {
 			console.log(`new event: ${event}`);
 		}
+	}
+    protected async stackTraceRequest(response: DebugProtocol.StackTraceResponse, args: DebugProtocol.StackTraceArguments, request?: DebugProtocol.Request): Promise<void> {
+		await this._mobDebugSession?.stack();
+		console.log("test");
 	}
 	private  setBreakpointsForFile(filePath: string, breakpoints: DebugProtocol.SourceBreakpoint[]): void {
 		const args: DebugProtocol.SetBreakpointsArguments = {

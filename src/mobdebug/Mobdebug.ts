@@ -1,9 +1,27 @@
 import { error } from 'console';
 import * as net from 'net';
 import * as vscode from 'vscode';
-import * as commands from './commands/mod';
 import { PremakeConfig } from '../config';
+import * as commands from './commands/mod';
 type EventCallback = (event: string) => Promise<void>;
+export class StackTrace {
+    meta: string[];
+    params: Record<string, string>;
+    fields: Record<string, string>;
+
+    constructor(meta: string[], params: Record<string, string>, fields: Record<string, string>) {
+        this.meta = meta;
+        this.params = params;
+        this.fields = fields;
+    }
+    get functionName(): string |undefined { 
+        if(this.meta[0] === 'nil'){ return undefined; }
+        else { return this.meta[0]; }
+    }
+    get shortPath(): string { return this.meta[1]; }
+    get startLine(): number { return parseInt(this.meta[2], 10); }
+    get endLine(): number { return parseInt(this.meta[3], 10);}
+}
 
 export enum Result {
     ok,
@@ -79,6 +97,13 @@ export class MobDebug {
         const result:string = await this.sendCommand(new commands.BasedirCommand(dir));
         return this.getResultEnum(result);
     }
+
+    public async stack(): Promise<StackTrace[]> {
+        const result:string = await this.sendCommand(new commands.StackCommand());
+        const parsedStack = this.parseStackTrace(result);
+        return parsedStack;
+    }
+
     private async sendCommand(command: commands.Command): Promise<string> {
         return new Promise((resolve, reject) => {
             this.client.write(command.toString(), (err) => {
@@ -88,7 +113,7 @@ export class MobDebug {
             });
 
             // Wait for data and the 'end' event.
-            this.client.once('data', (data: Buffer) => {
+            this.client.on('data', (data: Buffer) => {
                 this.responseBuffer += data.toString();
                 if (this.responseBuffer.includes('\n')) {
                     // Split the buffer into responses
@@ -155,4 +180,82 @@ export class MobDebug {
         else if(data.startsWith("401 Error in Expression")) {return Result.error_in_expression;}
         else {return Result.failure;}
     }
+    
+
+
+    private parseStackTrace(stackTrace: string): StackTrace[] {
+        const frames: StackTrace[] = [];
+        const stackFrameStrings = this.extractStackFrames(stackTrace);
+
+        for (let i = 0; i < stackFrameStrings.length - 3; i += 3) {
+            const meta = stackFrameStrings[i]
+                .replace("{",'')
+                .replace("\"",'')
+                .replace("}","")
+                .split(',');
+            const fields = this.parseFields(stackFrameStrings[i+1]
+                .replace("\"",'')
+                .replace("{",'')
+                .replace("}","")
+                .split(','));
+            const params = this.parseFields(stackFrameStrings[i+2]
+                .replace("\"",'')
+                .replace("{",'')
+                .replace("}","")
+                .split(','));
+            frames.push(new StackTrace(meta,params,fields));
+        }
+
+        return frames;
+    }
+
+    // Extract individual stack frame strings by manually splitting based on curly braces
+    private extractStackFrames(stackTraceString: string): string[] {
+        let frameStrings: string[] = [];
+        let depth = 0;
+        let currentFrame = '';
+        
+        let stackTrace:string | undefined= stackTraceString.match("\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}")?.toString();
+        while (stackTrace !== undefined) {
+                stackTraceString = stackTraceString.replace(stackTrace!, '').trim();
+            stackTrace = stackTrace.replace(",,",'');
+
+            if(stackTrace !==  "{}") {frameStrings.push(stackTrace); }
+            stackTrace = stackTraceString.match("\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}")?.toString();
+        }
+        const remainder = frameStrings.length % 3;
+        if(remainder > 0) { return frameStrings.slice(0, frameStrings.length - remainder); }
+        return frameStrings;
+    }
+
+    // Parse a single frame string into an object
+
+
+    // Parse dynamic fields (func, p, i, etc.)
+    private parseFields(fieldStrings: string[]): Record<string, string> {
+        const fields: Record<string, string> = {};
+        
+        fieldStrings.forEach(fieldString => {
+            const [fieldName, fieldValue] = fieldString.split('=').map(str => str.trim());
+            if (fieldValue) {
+            fields[fieldName] = this.parseFieldValue(fieldValue);
+            }
+        });
+        
+        return fields;
+    }
+
+    // Parse a field value and determine if it's a number, function, or table
+    private parseFieldValue(value: string): string {
+        if (value.startsWith('function:')) {
+            return value; // Store function as a string reference for now
+        } else if (value.startsWith('table:')) {
+            return value; // Store table reference as a string
+        } else if (!isNaN(Number(value))) {
+            return value; // If it's a number, convert it
+        }
+        
+        return value; // Default case: treat it as a string
+    }
+
 }
