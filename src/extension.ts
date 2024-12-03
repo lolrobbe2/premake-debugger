@@ -10,7 +10,6 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Use the console to output diagnostic information (console.log) and errors (console.error)
 	// This line of code will only be executed once when your extension is activated
-	console.log('premake-debugger is now active!');
     vscode.window.showInformationMessage("activating!");
 
     const factory = new DebugAdapterDescriptorFactory();

@@ -71,7 +71,7 @@ export class PremakeConfig {
             } else {
                 console.error(`Premake exited with code ${code}`);
                 callback(new Error(`Premake exited with code ${code}`), false);
-                this.outputChannel.dispose();
+                //this.outputChannel.dispose();
             }
         });
 
@@ -82,5 +82,10 @@ export class PremakeConfig {
         });
         
         return premakeProcess;
+    }
+    get cwd() {
+         return vscode.workspace.workspaceFolders
+                ? vscode.workspace.workspaceFolders[0].uri.fsPath
+                : this.rootLoc;
     }
 }

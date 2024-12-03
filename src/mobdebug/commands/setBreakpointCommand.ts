@@ -7,7 +7,7 @@ export class SetBreakpointCommand implements Command {
     constructor(file: string, line: number) {
         this._file = file;
         this._line = line;
-        this._command = `SETB ${this._file}:${this._line}\n`;
+        this._command = `SETB ${this._file} ${this._line}\n`;
     }
     toString(): string {
         return this._command;
