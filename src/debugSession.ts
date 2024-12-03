@@ -39,12 +39,14 @@ export class PremakeDebugSession extends LoggingDebugSession {
 	readonly _configurationDone: Promise<void>;
 	
 	private _configurationDoneResolve: () => void = () => {};
+	private _breakpointsSetResolve: () => void = () => {};
 	readonly eventListener: DebugServer;
 	private _mobDebugSession:MobDebug | null = null;
 
 	private _premakeProcess?:ChildProcessWithoutNullStreams = undefined;
 
 	private _sessionReady: Promise<void>;
+	private _breakpointsSet: Promise<void>;
     private _sessionReadyResolve: () => void = () => {};
 	private _breakpoints: Map<string,DebugProtocol.SourceBreakpoint> = new Map();
 	private prefixes:string[] = [
@@ -60,6 +62,10 @@ export class PremakeDebugSession extends LoggingDebugSession {
 		this._configurationDone = new Promise<void>((resolve) => {
        		this._configurationDoneResolve = resolve;
     	});
+
+		this._breakpointsSet = new Promise<void>((resolve) => {
+			this._breakpointsSetResolve = resolve;
+		});
 
 		this._sessionReady = new Promise<void>((resolve) => {
             this._sessionReadyResolve = resolve;
@@ -139,8 +145,9 @@ export class PremakeDebugSession extends LoggingDebugSession {
 		await this._configurationDone;
 		await this._sessionReady;
 		console.log(`setting basedir result: ${await this._mobDebugSession?.setBaseDir(new PremakeConfig().cwd)}`);
-		console.log(`run mobdebug: ${await this._mobDebugSession?.run()}`);
+		await this._breakpointsSet;
 
+		console.log(`run mobdebug: ${await this._mobDebugSession?.run()}`);
 		console.log("launched succesfuly");
 		this.sendResponse(response);
 		
@@ -148,7 +155,6 @@ export class PremakeDebugSession extends LoggingDebugSession {
 
 	protected async setBreakPointsRequest(response: DebugProtocol.SetBreakpointsResponse, args: DebugProtocol.SetBreakpointsArguments): Promise<void> {
 		await this._sessionReady;
-		
 		const source = args.source;
 		let filepath: string = "";
 		let filename: string = '';
@@ -162,8 +168,8 @@ export class PremakeDebugSession extends LoggingDebugSession {
 		}
 		filename = filename.replace(/\\/g, '/'); // replaces \\ with /
 		//filename = this.stripPrefix(filename,this.prefixes);
+		filename = `/${filename}`;
 		const filesize = this.getFileSize(filepath);
-		console.log(`load file result: ${await this._mobDebugSession?.loadFile(filesize,filename)}`);
 		//filename = filename.replace(/^[/\\]+/, ''); //strips the leading /
 		// Log the filename (you can process it further as needed)
 		console.log(`Setting breakpoints for file: ${filename}`);
@@ -193,6 +199,7 @@ export class PremakeDebugSession extends LoggingDebugSession {
 		}
 		response.body.breakpoints = actualBreakpoints;
 		response.success = true;
+		this._breakpointsSetResolve();
 		this.sendResponse(response);
 	}
 	protected async cancelRequest(response: DebugProtocol.CancelResponse, args: DebugProtocol.CancelArguments, request?: DebugProtocol.Request): Promise<void> {

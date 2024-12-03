@@ -21,7 +21,8 @@ export class MobDebug {
     private isConnected:boolean = false;
     private eventCallbacks: EventCallback[] = [];
     private sendingCommand:boolean = false;
-    private eventBuffer: string = '';    
+    private eventBuffer: string = '';
+    private sendingFile:boolean = false;
     readonly commandResponses: string[] =  [
         "200 OK",
         "400 Bad Request",
@@ -112,6 +113,9 @@ export class MobDebug {
                     }
                 }
             });
+            setTimeout(()=>{
+                if(!this.sendingFile && this.responseBuffer !== '') { console.log("error sending command"!); }
+            },5000);
             // Handle potential timeout or unexpected behavior.
         });
     }
