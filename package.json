@@ -21,29 +21,33 @@
       }
     ],
     "languages": [
-    {
-      "id": "lua",
-      "extensions": [".lua"],
-      "aliases": ["Lua"]
-    }
+      {
+        "id": "lua",
+        "extensions": [
+          ".lua"
+        ],
+        "aliases": [
+          "Lua"
+        ]
+      }
     ],
     "debuggers": [
-        {
-          "type": "premake",
-          "label": "launch premake",
-          "configurationAttributes": {
-            "premake.port": {
-              "type": "number",
-              "default": 8172,
-              "description": "Port number for connecting to the premake MobDebug server."
-            },
-            "premake.host": {
-              "type": "string",
-              "default": "localhost",
-              "description": "Host address for the premake MobDebug server."
-            }
+      {
+        "type": "premake",
+        "label": "launch premake",
+        "configurationAttributes": {
+          "premake.port": {
+            "type": "number",
+            "default": 8172,
+            "description": "Port number for connecting to the premake MobDebug server."
+          },
+          "premake.host": {
+            "type": "string",
+            "default": "localhost",
+            "description": "Host address for the premake MobDebug server."
           }
         }
+      }
     ],
     "commands": [],
     "configuration": {
@@ -91,7 +95,6 @@
             "release"
           ],
           "when": "premake.dev === 'development'",
-
           "description": "the launch mode (run release or debug build)"
         },
         "premake.dev.binloc": {
@@ -99,7 +102,6 @@
           "default": "./bin",
           "description": "the location of the premake bin folder",
           "when": "config.premake.dev == 'development'"
-
         }
       }
     }
@@ -113,18 +115,23 @@
     "test": "vscode-test"
   },
   "devDependencies": {
+    "@types/lodash": "^4.17.13",
+    "@types/lua-json": "^1.0.3",
+    "@types/luaparse": "^0.2.12",
     "@types/mocha": "^10.0.9",
     "@types/node": "20.x",
     "@types/vscode": "^1.95.0",
     "@typescript-eslint/eslint-plugin": "^8.10.0",
     "@typescript-eslint/parser": "^8.7.0",
     "@vscode/debugadapter": "^1.68.0",
+    "@vscode/debugprotocol": "^1.68.0",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1",
     "await-notify": "^1.0.1",
     "eslint": "^9.13.0",
+    "lua-json": "^1.0.1",
+    "luaparse": "^0.3.1",
     "typescript": "^5.6.3",
-    "@vscode/debugprotocol": "^1.68.0",
     "vscode-debugadapter": "^1.51.0"
   }
 }

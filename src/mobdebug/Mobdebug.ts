@@ -1,7 +1,10 @@
+import { Source } from '@vscode/debugadapter';
 import { error } from 'console';
 import * as net from 'net';
+import path from 'path';
 import * as vscode from 'vscode';
 import { PremakeConfig } from '../config';
+import * as luajson from '../luajson';
 import * as commands from './commands/mod';
 type EventCallback = (event: string) => Promise<void>;
 export class StackTrace {
@@ -14,13 +17,17 @@ export class StackTrace {
         this.params = params;
         this.fields = fields;
     }
-    get functionName(): string |undefined { 
-        if(this.meta[0] === 'nil'){ return undefined; }
+    get functionName(): string { 
+        if(this.meta[0] === 'nil'){ return 'no name'; }
         else { return this.meta[0]; }
     }
     get shortPath(): string { return this.meta[1]; }
+    get fullPath(): string { return this.meta[6]; }
     get startLine(): number { return parseInt(this.meta[2], 10); }
     get endLine(): number { return parseInt(this.meta[3], 10);}
+    get source(): Source { 
+        return new Source(path.basename(this.fullPath),this.fullPath);
+    }
 }
 
 export enum Result {
@@ -83,6 +90,14 @@ export class MobDebug {
     }
     public async step():Promise<Result> {
         const result:string = await this.sendCommand(new commands.StepCommand());
+        return this.getResultEnum(result);
+    }
+    public async stepOver():Promise<Result> {
+        const result:string = await this.sendCommand(new commands.StepOverCommand());
+        return this.getResultEnum(result);
+    }
+    public async stepOut():Promise<Result> {
+        const result:string = await this.sendCommand(new commands.StepOutCommand());
         return this.getResultEnum(result);
     }
     public async run(): Promise<String> {
@@ -185,25 +200,28 @@ export class MobDebug {
 
     private parseStackTrace(stackTrace: string): StackTrace[] {
         const frames: StackTrace[] = [];
-        const stackFrameStrings = this.extractStackFrames(stackTrace);
+        const test:string = stackTrace.replace("200 OK do ",'').split(";local").at(0)!;
+        const object = luajson.parse(test.replaceAll("nil",'"nil"').replaceAll('{},',""));
+        
+        if (Array.isArray(object)) {
+            for (let i = 0; i < object.length; i++) {
+                // Destructure object[i] to extract meta, params, and fields
+                const [meta, params, fields] = object[i];
 
-        for (let i = 0; i < stackFrameStrings.length - 3; i += 3) {
-            const meta = stackFrameStrings[i]
-                .replace("{",'')
-                .replace("\"",'')
-                .replace("}","")
-                .split(',');
-            const fields = this.parseFields(stackFrameStrings[i+1]
-                .replace("\"",'')
-                .replace("{",'')
-                .replace("}","")
-                .split(','));
-            const params = this.parseFields(stackFrameStrings[i+2]
-                .replace("\"",'')
-                .replace("{",'')
-                .replace("}","")
-                .split(','));
-            frames.push(new StackTrace(meta,params,fields));
+                // Validate the structure of meta, params, and fields
+                if (
+                Array.isArray(meta) &&
+                typeof params === 'object' &&
+                params !== null &&
+                typeof fields === 'object' &&
+                fields !== null
+                ) {
+                // Create a new StackTrace instance
+                frames.push(new StackTrace(meta, params, fields));
+                } else {
+                console.warn(`Invalid structure in object at index ${i}:`, object[i]);
+                }
+            }
         }
 
         return frames;
@@ -227,35 +245,4 @@ export class MobDebug {
         if(remainder > 0) { return frameStrings.slice(0, frameStrings.length - remainder); }
         return frameStrings;
     }
-
-    // Parse a single frame string into an object
-
-
-    // Parse dynamic fields (func, p, i, etc.)
-    private parseFields(fieldStrings: string[]): Record<string, string> {
-        const fields: Record<string, string> = {};
-        
-        fieldStrings.forEach(fieldString => {
-            const [fieldName, fieldValue] = fieldString.split('=').map(str => str.trim());
-            if (fieldValue) {
-            fields[fieldName] = this.parseFieldValue(fieldValue);
-            }
-        });
-        
-        return fields;
-    }
-
-    // Parse a field value and determine if it's a number, function, or table
-    private parseFieldValue(value: string): string {
-        if (value.startsWith('function:')) {
-            return value; // Store function as a string reference for now
-        } else if (value.startsWith('table:')) {
-            return value; // Store table reference as a string
-        } else if (!isNaN(Number(value))) {
-            return value; // If it's a number, convert it
-        }
-        
-        return value; // Default case: treat it as a string
-    }
-
 }

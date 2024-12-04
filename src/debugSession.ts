@@ -4,6 +4,7 @@ import {
 	InitializedEvent,
 	LoggingDebugSession,
 	Source,
+	StackFrame,
 	StoppedEvent,
 	Thread
 } from '@vscode/debugadapter';
@@ -14,7 +15,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { PremakeConfig } from './config';
 import { DebugServer } from './mobdebug/DebugServer';
-import { MobDebug } from './mobdebug/Mobdebug';
+import { MobDebug, StackTrace } from './mobdebug/Mobdebug';
 
 interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
 	/** An absolute path to the "program" to debug. */
@@ -298,19 +299,41 @@ export class PremakeDebugSession extends LoggingDebugSession {
 		}
 	}
     protected async stackTraceRequest(response: DebugProtocol.StackTraceResponse, args: DebugProtocol.StackTraceArguments, request?: DebugProtocol.Request): Promise<void> {
-		await this._mobDebugSession?.stack();
-		console.log("test");
-	}
-	private  setBreakpointsForFile(filePath: string, breakpoints: DebugProtocol.SourceBreakpoint[]): void {
-		const args: DebugProtocol.SetBreakpointsArguments = {
-			source: {
-				path: filePath
-			},
-			breakpoints: breakpoints
+		const stackTraces:StackTrace[]  = await this._mobDebugSession!.stack();
+		const stackTracesVscode:StackFrame[] = [];
+		let id = 0;
+		for (const trace of stackTraces){
+			const stackFrame:StackFrame = new StackFrame(
+				id,
+				trace.functionName,
+				trace.source,
+				trace.endLine,
+				1
+			);
+			id++;
+			stackTracesVscode.push(stackFrame);
+		}
+		response.body = {
+			stackFrames: stackTracesVscode,
+			totalFrames: stackTracesVscode.length
 		};
+		this.sendResponse(response);
+	}
 
-    // Send the request to VS Code to set breakpoints
-    //this.sendRequest('setBreakPoints', args,5000,() => {});
+    protected async stepInRequest(response: DebugProtocol.StepInResponse, args: DebugProtocol.StepInArguments, request?: DebugProtocol.Request): Promise<void>
+	{
+		await this._mobDebugSession?.step();
+		this.sendResponse(response);
+	}
+
+	protected async stepOutRequest(response: DebugProtocol.StepOutResponse, args: DebugProtocol.StepOutArguments, request?: DebugProtocol.Request): Promise<void> {
+		await this._mobDebugSession?.stepOut();
+		this.sendResponse(response);
+	};
+	protected async nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments, request?: DebugProtocol.Request): Promise<void>
+	{
+		await this._mobDebugSession?.stepOver();
+		this.sendResponse(response);
 	}
 	private simpleHash(str:string):number{
 		let hash = 0;
