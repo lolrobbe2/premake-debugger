@@ -1,12 +1,11 @@
 import {
-	Breakpoint,
-	BreakpointEvent,
 	InitializedEvent,
 	LoggingDebugSession,
-	Source,
+	Scope,
 	StackFrame,
 	StoppedEvent,
-	Thread
+	Thread,
+	Variable
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
 import { ChildProcessWithoutNullStreams } from 'child_process';
@@ -51,8 +50,8 @@ export class PremakeDebugSession extends LoggingDebugSession {
 	private _breakpointsSet: Promise<void>;
     private _sessionReadyResolve: () => void = () => {};
 	private _breakpoints: Map<string,DebugProtocol.SourceBreakpoint> = new Map();
-	private _currentFile: string = "";
-	private _currentLine: number = 0;
+	private _stackTrace:StackTrace[] = [];
+
 	private prefixes:string[] = [
 		"modules",
 		"src"
@@ -285,10 +284,8 @@ export class PremakeDebugSession extends LoggingDebugSession {
 				console.log(`pause at file:${ fileName}, line:${ line}`);
 
 				const breakpointId = PremakeDebugSession.debugSession.generateBreakpointId(filepath, line);
-				PremakeDebugSession.debugSession._currentFile = filepath;
-				PremakeDebugSession.debugSession._currentLine = line;
 				PremakeDebugSession.debugSession.sendEvent(new StoppedEvent("breakpoint",1));
-				PremakeDebugSession.debugSession.sendEvent(new BreakpointEvent('new',new Breakpoint(true,line,0,new Source(fileName,filepath))));
+				//PremakeDebugSession.debugSession.sendEvent(new BreakpointEvent('new',new Breakpoint(true,line,0,new Source(fileName,filepath))));
 
 			}
 			
@@ -317,6 +314,39 @@ export class PremakeDebugSession extends LoggingDebugSession {
 			stackFrames: stackTracesVscode,
 			totalFrames: stackTracesVscode.length
 		};
+		this._stackTrace = stackTraces;
+		this.sendResponse(response);
+	}
+	protected async scopesRequest(response: DebugProtocol.ScopesResponse, args: DebugProtocol.ScopesArguments): Promise<void> {
+		response.body = {
+			scopes: [
+				new Scope("Local", 1, false), // 1 is the `variablesReference`
+				new Scope("Params", 2, false)
+			]
+		};
+    	this.sendResponse(response);
+	}
+    protected async variablesRequest(response: DebugProtocol.VariablesResponse, args: DebugProtocol.VariablesArguments, request?: DebugProtocol.Request): Promise<void> {
+		
+		if(args.variablesReference === 1){
+			const variables:Variable[] = [];
+			const currentStackFrame:StackTrace = this._stackTrace[0];
+			for(const field in currentStackFrame.fields){
+				console.log(field);
+			}
+		} else if(args.variablesReference === 2) {
+			let id:number = 1000;
+			const variables:Variable[] = [];
+			const currentStackFrame:StackTrace = this._stackTrace[0];
+			for(const field in currentStackFrame.params){
+				const variable:Variable = new Variable(field,currentStackFrame.params[field][0].toString());
+				//currentStackFrame.params[field];
+				//console.log(field);
+				variables.push(variable);
+			}
+			response.body = {variables: variables};
+		}
+	
 		this.sendResponse(response);
 	}
 
@@ -335,12 +365,21 @@ export class PremakeDebugSession extends LoggingDebugSession {
 		await this._mobDebugSession?.stepOver();
 		this.sendResponse(response);
 	}
+	protected async pauseRequest(response: DebugProtocol.PauseResponse, args: DebugProtocol.PauseArguments, request?: DebugProtocol.Request): Promise<void>
+	{
+		await this._mobDebugSession?.suspend();
+		this.sendResponse(response);
+	}
 	private simpleHash(str:string):number{
 		let hash = 0;
 		for (let i = 0; i < str.length; i++) {
 			hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
 		}
 		return parseInt((hash >>> 0).toString(36));
+	}
+	protected async evaluateRequest(response: DebugProtocol.EvaluateResponse, args: DebugProtocol.EvaluateArguments, request?: DebugProtocol.Request): Promise<void>
+	{
+		console.log("test");
 	}
 	private generateBreakpointId(file: string, line: number): number {
 		const idString = `${file}:${line}`; 
@@ -353,16 +392,6 @@ export class PremakeDebugSession extends LoggingDebugSession {
 		} catch (error) {
 			console.error(`Error getting file size for ${filePath}:`, error);
 			return 0;
-		}
-	}
-	protected notifyBreakpointHit(path: string, line: number): void {
-		const breakpoint = this._breakpoints.get(`${path}:${line}`); 
-		if (breakpoint) {
-			this.sendEvent(new StoppedEvent('breakpoint', 1, `Breakpoint hit at ${path}:${line}`)); // Optionally, send a BreakpointEvent to update the state in VSCode 
-			this.sendEvent(new BreakpointEvent('changed', new Breakpoint(true, line)));
-			console.log(`Breakpoint hit at ${path}:${line}`); 
-		} else {
-			console.log(`No matching breakpoint found at ${path}:${line}`); 
 		}
 	}
 }

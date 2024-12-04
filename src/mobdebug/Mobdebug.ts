@@ -17,7 +17,7 @@ export class StackTrace {
         this.params = params;
         this.fields = fields;
     }
-    get functionName(): string { 
+    get functionName(): string {
         if(this.meta[0] === 'nil'){ return 'no name'; }
         else { return this.meta[0]; }
     }
@@ -103,6 +103,10 @@ export class MobDebug {
     public async run(): Promise<String> {
         const result:string = await this.sendCommand(new commands.RunCommand());
         return result;
+    }
+    public async suspend(): Promise<Result> {
+        const result:string = await this.sendCommand(new commands.SuspendCommand());
+        return this.getResultEnum(result);
     }
     public async exit(): Promise<Result> {
         const result:string = await this.sendCommand(new commands.ExitCommand());
@@ -210,14 +214,10 @@ export class MobDebug {
 
                 // Validate the structure of meta, params, and fields
                 if (
-                Array.isArray(meta) &&
-                typeof params === 'object' &&
-                params !== null &&
-                typeof fields === 'object' &&
-                fields !== null
+                Array.isArray(meta)
                 ) {
                 // Create a new StackTrace instance
-                frames.push(new StackTrace(meta, params, fields));
+                frames.push(new StackTrace(meta, params === undefined ? [] : params, fields === undefined ? [] : fields));
                 } else {
                 console.warn(`Invalid structure in object at index ${i}:`, object[i]);
                 }
