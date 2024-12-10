@@ -10,3 +10,4 @@ export { StepCommand } from "./stepCommand";
 export { StepOutCommand } from "./stepOutCommand";
 export { StepOverCommand } from "./stepOverCommand";
 export { SuspendCommand } from "./suspendCommand";
+export { ExecCommand } from "./execCommand";

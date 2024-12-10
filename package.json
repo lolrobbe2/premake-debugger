@@ -14,6 +14,9 @@
     "onLanguage:lua"
   ],
   "main": "./out/extension.js",
+  "files": [
+    "./resources/json.lua"
+  ],
   "contributes": {
     "breakpoints": [
       {
@@ -108,11 +111,12 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "compile": " npm run copy-resources && tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "copy-resources": "copyfiles --flat resources/*.lua out/resources/"
   },
   "devDependencies": {
     "@types/lodash": "^4.17.13",
@@ -128,6 +132,7 @@
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1",
     "await-notify": "^1.0.1",
+    "copyfiles": "^2.4.1",
     "eslint": "^9.13.0",
     "lua-json": "^1.0.1",
     "luaparse": "^0.3.1",

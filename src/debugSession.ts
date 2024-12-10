@@ -15,7 +15,11 @@ import * as vscode from 'vscode';
 import { PremakeConfig } from './config';
 import { DebugServer } from './mobdebug/DebugServer';
 import { MobDebug, StackTrace } from './mobdebug/Mobdebug';
-
+type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
+interface JsonObject {
+    [key: string]: JsonValue;
+}
+type JsonArray = JsonValue[];
 interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
 	/** An absolute path to the "program" to debug. */
 	program: string;
@@ -51,7 +55,7 @@ export class PremakeDebugSession extends LoggingDebugSession {
     private _sessionReadyResolve: () => void = () => {};
 	private _breakpoints: Map<string,DebugProtocol.SourceBreakpoint> = new Map();
 	private _stackTrace:StackTrace[] = [];
-
+	private _loadedJson: boolean = false;
 	private prefixes:string[] = [
 		"modules",
 		"src"
@@ -90,7 +94,7 @@ export class PremakeDebugSession extends LoggingDebugSession {
 		if (args.supportsInvalidatedEvent) {
 			this._useInvalidatedEvent = true;
 		}
-
+		
         response.body = response.body || {};
 
         // make VS Code use 'evaluate' when hovering over source
@@ -321,7 +325,7 @@ export class PremakeDebugSession extends LoggingDebugSession {
 		response.body = {
 			scopes: [
 				new Scope("Local", 1, false), // 1 is the `variablesReference`
-				new Scope("Params", 2, false)
+				new Scope("Params", 2, false),
 			]
 		};
     	this.sendResponse(response);
@@ -379,7 +383,26 @@ export class PremakeDebugSession extends LoggingDebugSession {
 	}
 	protected async evaluateRequest(response: DebugProtocol.EvaluateResponse, args: DebugProtocol.EvaluateArguments, request?: DebugProtocol.Request): Promise<void>
 	{
-		console.log("test");
+		const result: string = await this._mobDebugSession!.exec(`return tostring(${args.expression})`);
+		if(result.startsWith("table")){
+			const absolutePath = path.resolve(__dirname, 'resources', 'json.lua').replaceAll("\\", "/");
+			const absoluteTransformPath = path.resolve(__dirname, 'resources', 'transform.lua').replaceAll("\\", "/");
+
+			const res: string = await this._mobDebugSession!.exec(`return (function(obj) local transform = dofile('${absoluteTransformPath}'); local json = dofile('${absolutePath}'); return json.encode(transform.separateTable(obj)) end)(${args.expression})`);
+			if(res.startsWith("401")){
+				response.body = {result: result,variablesReference: 1,type: this.determinePrimitiveType(result)};
+			} else {
+				console.log(res);
+				//
+				
+				const object: any = JSON.parse(res);
+				const object2: JsonValue = this.removeNestedTableKeys(object);
+				response.body = {result: JSON.stringify(object2),variablesReference: 1,presentationHint: {kind: 'property'},type: this.determinePrimitiveType(JSON.stringify(object2)) };
+			}
+		} else {
+			response.body = {result: result,variablesReference: 1,type: this.determinePrimitiveType(result)};
+		}
+		this.sendResponse(response);
 	}
 	private generateBreakpointId(file: string, line: number): number {
 		const idString = `${file}:${line}`; 
@@ -394,4 +417,62 @@ export class PremakeDebugSession extends LoggingDebugSession {
 			return 0;
 		}
 	}
+	private determinePrimitiveType(input:string): string {
+    if (input === "nil") {
+        return "null";
+    }
+    if (input === "undefined") {
+        return "undefined";
+    }
+    if (input === "true" || input === "false") {
+        return "boolean";
+    }
+    if (!isNaN(Number(input)) && input.trim() !== "") {
+        return "Number";
+    }
+	try {
+        // Attempt to parse the string to see if it's an object
+        const parsedInput = JSON.parse(input);
+        
+        // If it's an array, return "array"
+        if (Array.isArray(parsedInput)) {
+            return "Array";
+        }
+        
+        // If it's a plain object, return "object"
+        if (parsedInput !== null && typeof parsedInput === "object") {
+            return "Object";
+        }
+    } catch (error) {
+        // Not a valid JSON string, proceed as normal
+    }
+	
+    return "String";
+}
+
+private removeNestedTableKeys(obj: JsonValue): JsonValue {
+    if (Array.isArray(obj)) {
+        // Recursively process array elements
+        return obj.map(this.removeNestedTableKeys);
+    } else if (obj !== null && typeof obj === "object") {
+        // Create a new object to hold the transformed data
+        const newObj: JsonObject = {};
+        for (const [key, value] of Object.entries(obj)) {
+            if (key === "Nested Table" && typeof value === "object") {
+                // Merge the "Nested Table" contents into the parent
+                const nestedValue = this.removeNestedTableKeys(value);
+                if (nestedValue && typeof nestedValue === "object") {
+                    Object.assign(newObj, nestedValue);
+                }
+            } else {
+                // Process other keys recursively
+                newObj[key] = this.removeNestedTableKeys(value);
+            }
+        }
+        return newObj;
+    }
+    // Return primitive values directly
+    return obj;
+}
+
 }

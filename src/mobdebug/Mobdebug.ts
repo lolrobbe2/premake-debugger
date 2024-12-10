@@ -122,7 +122,13 @@ export class MobDebug {
         const parsedStack = this.parseStackTrace(result);
         return parsedStack;
     }
-
+    public async exec(statement:string): Promise<string> {
+        const result:string = await this.sendCommand(new commands.ExecCommand(statement));
+        if(this.getResultEnum(result) === Result.ok){
+            return result.split("\n")[1].replace(/\\{1,2}/g, '').replace(/""/g,"").replaceAll(/"Nested Table":\{([^{}]*)\}/g,'$1');
+        }
+        return result;
+    }
     private async sendCommand(command: commands.Command): Promise<string> {
         return new Promise((resolve, reject) => {
             this.client.write(command.toString(), (err) => {
@@ -132,31 +138,56 @@ export class MobDebug {
             });
 
             // Wait for data and the 'end' event.
-            this.client.on('data', (data: Buffer) => {
+            const dataListener = (data: Buffer) => {
                 this.responseBuffer += data.toString();
                 if (this.responseBuffer.includes('\n')) {
                     // Split the buffer into responses
                     const responses = this.responseBuffer.split('\n').filter((line) => line.trim() !== '');
                     
                     // Reset the buffer for subsequent processing
-                    this.responseBuffer = '';
+                    
                     const events: string[] = [];
                     // Check responses for the expected condition
+
+                    let expectedLenght: number = 0;
+                    let foundExecResponse: boolean = false;
                     for (const response of responses) {
-                        if (this.isResponse(response)) {
+                        if (this.isResponse(response) || response.startsWith("do local")) {
                             // Handle events first
                             this.launchEvents(events);
 
                             // Resolve the promise as the response was found
-                            resolve(response);
-                            return;
+                            if(command.toString().startsWith("EXEC"))
+                            {
+                                const res = response.match(/^(\d{3})\s([A-Z]+)\s(\d+)$/)!;
+                                if(foundExecResponse && response.length === expectedLenght){
+                                    const result = response.replace("do local _={",'').replace(/};return _;end$/, "");
+                                    this.client.removeListener('data', dataListener);
+                                    this.responseBuffer = '';
+
+                                    return resolve(`200 OK ${expectedLenght}\n${result}`);
+                                } else if (res !== null && res[0]) {
+                                    expectedLenght = parseInt(res[3]);
+                                    foundExecResponse = true;
+                                } else if(this.isResponse(response)) {
+                                    this.client.removeListener('data', dataListener);
+                                    this.responseBuffer = '';
+                                    return resolve(response);
+                                }
+                                
+                            } else {
+                                this.client.removeListener('data', dataListener);
+                                this.responseBuffer = '';
+                                return resolve(response);
+                            }
                         } else {
                             // Add non-matching responses to events
                             events.push(response);
                         }
                     }
                 }
-            });
+            };
+            this.client.on('data', dataListener);
             setTimeout(()=>{
                 if(!this.sendingFile && this.responseBuffer !== '') { console.log("error sending command"!); }
             },5000);
