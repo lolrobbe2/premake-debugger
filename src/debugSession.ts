@@ -15,11 +15,14 @@ import * as vscode from 'vscode';
 import { PremakeConfig } from './config';
 import { DebugServer } from './mobdebug/DebugServer';
 import { MobDebug, StackTrace } from './mobdebug/Mobdebug';
-type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
+type JsonValue = string | number | boolean | null | JsonObject | JsonArray | object;
 interface JsonObject {
     [key: string]: JsonValue;
 }
 type JsonArray = JsonValue[];
+
+
+
 interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
 	/** An absolute path to the "program" to debug. */
 	program: string;
@@ -324,11 +327,12 @@ export class PremakeDebugSession extends LoggingDebugSession {
 	protected async scopesRequest(response: DebugProtocol.ScopesResponse, args: DebugProtocol.ScopesArguments): Promise<void> {
 		
 		const currentStackFrame:StackTrace = this._stackTrace[0];
-		let currentIndex: number = 0;
+		let currentIndex: number = 1;
 		const rootScopes:Scope[] = [];
 		for(const field in currentStackFrame.params){
 			const scope:Scope = new Scope(field,currentIndex,true);
 			rootScopes.push(scope);
+			currentIndex++;
 		}
 		
 
@@ -339,18 +343,14 @@ export class PremakeDebugSession extends LoggingDebugSession {
 	}
     protected async variablesRequest(response: DebugProtocol.VariablesResponse, args: DebugProtocol.VariablesArguments, request?: DebugProtocol.Request): Promise<void> {
 		
-		if(args.variablesReference === 1){
-			const variables:Variable[] = [];
-			const currentStackFrame:StackTrace = this._stackTrace[0];
-			for(const field in currentStackFrame.fields){
-				console.log(field);
-			}
-		} else if(args.variablesReference === 2) {
-			let id:number = 1000;
-			const variables:Variable[] = [];
-			response.body = {variables: variables};
+		if(this.variableStore.has(args.variablesReference)){
+			response.body = {
+				variables: this.variableStore.get(args.variablesReference)!
+			};
+		} else {
+			
 		}
-	
+
 		this.sendResponse(response);
 	}
 
@@ -474,5 +474,24 @@ private removeNestedTableKeys(obj: JsonValue): JsonValue {
     // Return primitive values directly
     return obj;
 }
+ private async getResolveVariable(name: string) : Promise<object | string> {
+	const result: string = await this._mobDebugSession!.exec(`return tostring(${name})`);
+		if(result.startsWith("table")){
+			const absolutePath = path.resolve(__dirname, 'resources', 'json.lua').replaceAll("\\", "/");
+			const absoluteTransformPath = path.resolve(__dirname, 'resources', 'transform.lua').replaceAll("\\", "/");
 
+			const res: string = await this._mobDebugSession!.exec(`return (function(obj) local transform = dofile('${absoluteTransformPath}'); local json = dofile('${absolutePath}'); return json.encode(transform.separateTable(obj)) end)(${name})`);
+			if(res.startsWith("401")){
+				return result;
+			} else {
+				//
+				
+				const object: any = JSON.parse(res);
+				const object2: JsonValue = this.removeNestedTableKeys(object);
+				return object2!.toString();
+			}
+		} else {
+			return result;
+		}
+ 	}
 }
