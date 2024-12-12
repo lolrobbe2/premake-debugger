@@ -38,7 +38,7 @@ interface IAttachRequestArguments extends ILaunchRequestArguments { }
 export class PremakeDebugSession extends LoggingDebugSession {
 	private static debugSession: PremakeDebugSession;
     private static threadID = 1;
-
+	private variableStore: Map<number, Variable[]> = new Map();
     private _reportProgress = false;
     private _useInvalidatedEvent = false;
 	readonly _configurationDone: Promise<void>;
@@ -98,7 +98,7 @@ export class PremakeDebugSession extends LoggingDebugSession {
         response.body = response.body || {};
 
         // make VS Code use 'evaluate' when hovering over source
-		response.body.supportsEvaluateForHovers = true;
+		response.body.supportsEvaluateForHovers = false;
         // make VS Code send cancel request
 		response.body.supportsCancelRequest = true;
 		response.body.supportsConfigurationDoneRequest = true;
@@ -322,11 +322,18 @@ export class PremakeDebugSession extends LoggingDebugSession {
 		this.sendResponse(response);
 	}
 	protected async scopesRequest(response: DebugProtocol.ScopesResponse, args: DebugProtocol.ScopesArguments): Promise<void> {
+		
+		const currentStackFrame:StackTrace = this._stackTrace[0];
+		let currentIndex: number = 0;
+		const rootScopes:Scope[] = [];
+		for(const field in currentStackFrame.params){
+			const scope:Scope = new Scope(field,currentIndex,true);
+			rootScopes.push(scope);
+		}
+		
+
 		response.body = {
-			scopes: [
-				new Scope("Local", 1, false), // 1 is the `variablesReference`
-				new Scope("Params", 2, false),
-			]
+			scopes: rootScopes
 		};
     	this.sendResponse(response);
 	}
@@ -341,13 +348,6 @@ export class PremakeDebugSession extends LoggingDebugSession {
 		} else if(args.variablesReference === 2) {
 			let id:number = 1000;
 			const variables:Variable[] = [];
-			const currentStackFrame:StackTrace = this._stackTrace[0];
-			for(const field in currentStackFrame.params){
-				const variable:Variable = new Variable(field,currentStackFrame.params[field][0].toString());
-				//currentStackFrame.params[field];
-				//console.log(field);
-				variables.push(variable);
-			}
 			response.body = {variables: variables};
 		}
 	
