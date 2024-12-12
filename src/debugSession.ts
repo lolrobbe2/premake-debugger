@@ -41,11 +41,13 @@ interface IAttachRequestArguments extends ILaunchRequestArguments { }
 export class PremakeDebugSession extends LoggingDebugSession {
 	private static debugSession: PremakeDebugSession;
     private static threadID = 1;
-	private variableStore: Map<number, Variable[]> = new Map();
-    private _reportProgress = false;
-    private _useInvalidatedEvent = false;
+	private variableChildrenStore: Map<number, Variable[]> = new Map(); //stores variables by parent reference
+	private variableStore: Map<number, Variable> = new Map(); //stores variables by reference
+	private rootScopes:Scope[] = [];
+
 	readonly _configurationDone: Promise<void>;
-	
+	private currentIndex: number = 1;
+
 	private _configurationDoneResolve: () => void = () => {};
 	private _breakpointsSetResolve: () => void = () => {};
 	readonly eventListener: DebugServer;
@@ -91,12 +93,6 @@ export class PremakeDebugSession extends LoggingDebugSession {
 	 */
     protected initializeRequest(response: DebugProtocol.InitializeResponse, args: DebugProtocol.InitializeRequestArguments): void 
     {
-        if (args.supportsProgressReporting) {
-			this._reportProgress = true;
-		}
-		if (args.supportsInvalidatedEvent) {
-			this._useInvalidatedEvent = true;
-		}
 		
         response.body = response.body || {};
 
@@ -325,33 +321,61 @@ export class PremakeDebugSession extends LoggingDebugSession {
 		this.sendResponse(response);
 	}
 	protected async scopesRequest(response: DebugProtocol.ScopesResponse, args: DebugProtocol.ScopesArguments): Promise<void> {
-		
+		this.rootScopes = [];
 		const currentStackFrame:StackTrace = this._stackTrace[0];
-		let currentIndex: number = 1;
-		const rootScopes:Scope[] = [];
 		for(const field in currentStackFrame.params){
-			const scope:Scope = new Scope(field,currentIndex,true);
-			rootScopes.push(scope);
-			currentIndex++;
+			const scope:Scope = new Scope(field,this.currentIndex,true);
+
+			
+			const isSimple: boolean = this.isSimpleField(this.getFieldString(currentStackFrame.params[field]));
+			const fieldValue: string = isSimple ? this.getFieldString(currentStackFrame.params[field]) : "";
+			const ref: number = isSimple ? 0 : this.currentIndex;
+
+			const variable: Variable = new Variable(field,fieldValue,ref);
+
+			this.variableStore.set(this.currentIndex,variable); 
+			this.rootScopes.push(scope);
+			this.currentIndex++;
+			if(this.currentIndex >= 21)
+			{
+				vscode.window.showErrorMessage("to many scopes to resolve: maximum is 20");
+				return;
+			}
 		}
-		
+		this.currentIndex = 21;
+
 
 		response.body = {
-			scopes: rootScopes
+			scopes: this.rootScopes
 		};
     	this.sendResponse(response);
 	}
     protected async variablesRequest(response: DebugProtocol.VariablesResponse, args: DebugProtocol.VariablesArguments, request?: DebugProtocol.Request): Promise<void> {
 		
 		if(this.variableStore.has(args.variablesReference)){
-			response.body = {
-				variables: this.variableStore.get(args.variablesReference)!
-			};
-		} else {
-			
+			const isSimple: boolean = this.variableStore.get(args.variablesReference)?.variablesReference === 0;
+			if(isSimple){
+				response.body = {
+					variables: [this.variableStore.get(args.variablesReference)!]
+				};
+			} else if(this.variableChildrenStore.has(args.variablesReference)) {
+				response.body = {
+					variables: this.variableChildrenStore.get(args.variablesReference)!
+				};
+				
+			} else {
+				const result: object | string = await this.resolveVariable(this.variableStore.get(args.variablesReference)!.name);
+				if(typeof result === "object") {
+					const Variables: Variable[] = this.addVariables(result,args.variablesReference); 
+					this.variableChildrenStore.set(args.variablesReference,Variables);
+					response.body = {
+						variables: Variables
+					};
+				}
+			}
 		}
-
 		this.sendResponse(response);
+
 	}
 
     protected async stepInRequest(response: DebugProtocol.StepInResponse, args: DebugProtocol.StepInArguments, request?: DebugProtocol.Request): Promise<void>
@@ -391,10 +415,7 @@ export class PremakeDebugSession extends LoggingDebugSession {
 			const res: string = await this._mobDebugSession!.exec(`return (function(obj) local transform = dofile('${absoluteTransformPath}'); local json = dofile('${absolutePath}'); return json.encode(transform.separateTable(obj)) end)(${args.expression})`);
 			if(res.startsWith("401")){
 				response.body = {result: result,variablesReference: 1,type: this.determinePrimitiveType(result)};
-			} else {
-				console.log(res);
-				//
-				
+			} else {				
 				const object: any = JSON.parse(res);
 				const object2: JsonValue = this.removeNestedTableKeys(object);
 				response.body = {result: JSON.stringify(object2),variablesReference: 1,presentationHint: {kind: 'property'},type: this.determinePrimitiveType(JSON.stringify(object2)) };
@@ -474,7 +495,7 @@ private removeNestedTableKeys(obj: JsonValue): JsonValue {
     // Return primitive values directly
     return obj;
 }
- private async getResolveVariable(name: string) : Promise<object | string> {
+ private async resolveVariable(name: string) : Promise<object | string> {
 	const result: string = await this._mobDebugSession!.exec(`return tostring(${name})`);
 		if(result.startsWith("table")){
 			const absolutePath = path.resolve(__dirname, 'resources', 'json.lua').replaceAll("\\", "/");
@@ -484,14 +505,60 @@ private removeNestedTableKeys(obj: JsonValue): JsonValue {
 			if(res.startsWith("401")){
 				return result;
 			} else {
-				//
-				
-				const object: any = JSON.parse(res);
-				const object2: JsonValue = this.removeNestedTableKeys(object);
-				return object2!.toString();
+				return res;
 			}
 		} else {
 			return result;
 		}
  	}
+	private isLuaTable(fieldValue: string): boolean {
+		return fieldValue.startsWith("table: ");
+	}
+	private isInteger(fieldValue: string): boolean {
+		return Number.isInteger(Number.parseInt(fieldValue));
+	}
+
+	private isSimpleField(fieldValue: string): boolean {
+		return !this.isLuaTable(fieldValue) && this.isInteger(fieldValue);
+	}
+
+	private getFieldString(fieldValue: string): string {
+		if(typeof (fieldValue[0]) === "string"){
+			return fieldValue[0];
+		} else{
+			return fieldValue[1]; //else  fieldValue[0] would be an int or object
+		}
+	}
+	/**
+	 * @brief adds the variable to the variable store and variableChildren store
+	 */
+	private addVariables(object: Object, parentVariablesReference:number) : Variable[]{
+		const result:Variable[] = [];
+		for(const [key, value] of Object.entries(object)){
+			if(typeof value === "object" && !Array.isArray(value)){
+				//handle object
+				const variablesReference: number = this.currentIndex;
+				const variable: Variable = new Variable(key,"",variablesReference,undefined,value.length);
+				this.variableStore.set(variablesReference,variable);
+				result.push(variable);
+				this.variableChildrenStore.set(variablesReference,this.addVariables(value,variablesReference));
+			} else if(typeof value === "object" && Array.isArray(value)){
+				//handle array
+				const variablesReference: number = this.currentIndex;
+				const variable: Variable = new Variable(key,"",variablesReference,value.length);
+				this.variableStore.set(variablesReference,variable);
+				const arrayItems:Variable[] = [];
+
+				value.forEach((item,index) => {
+					const localVariablesReference: number = this.currentIndex;
+					const itemVariable: Variable = new Variable(index.toString(),item,localVariablesReference,value.length);
+					arrayItems.push(itemVariable);
+					this.currentIndex++;
+				});
+				this.variableChildrenStore.set(variablesReference,arrayItems);
+				result.push(variable);
+			}
+		}
+		return result;
+	}
 }

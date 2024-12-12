@@ -66,6 +66,7 @@ local function handleFunctionValue(value)
 end
 
 -- Recursive function to separate a mixed table
+    --[[
 local function separateTableRecursive(inputTable, name, seen)
     -- Track visited tables to handle recursion
     seen = seen or {}
@@ -95,11 +96,11 @@ local function separateTableRecursive(inputTable, name, seen)
         elseif valueType == "function" then
             -- Store function names as keys
             local funcName = debug.getinfo(v, "n").name or "Unnamed Function"
-            keyValues[funcName] = v
+            values[funcName] = v
 
         elseif valueType == "userdata" then
             -- For userdata, you can treat it as a string or some other type of value
-            keyValues[k] = tostring(v)  -- Convert userdata to string representation (or modify this as per your use case)
+              -- Convert userdata to string representation (or modify this as per your use case)
 
         else
             -- For other types (number, string, boolean, etc.)
@@ -109,19 +110,67 @@ local function separateTableRecursive(inputTable, name, seen)
 
     -- Return the result based on which sections are populated
     if #keyValues > 0 and #values > 0 then
-        return {keyValues = keyValues, values = values}
+        return {keyValues, values}
     elseif #keyValues > 0 then
         return keyValues
-    else
+    elseif #values > 0 then
         return values
+    else
+        return nil
     end
 end
+    --]]
+local function flatten_mixed_table(input_table, table_name)
+  local output_table = {}
+  local visited = {}
 
+  local function flatten_recursive(table_part, prefix)
+    if visited[table_part] then
+      output_table[prefix .. "[CIRCULAR REFERENCE]"] = nil
+      return
+    end
+
+    visited[table_part] = true
+
+    for k, v in pairs(table_part) do
+      if type(v) == "userdata" then
+        goto continue
+      end
+
+      local new_key = prefix
+
+      if type(k) == "number" then
+        new_key = new_key
+      else
+        new_key = new_key .. tostring(k)
+      end
+
+      if type(v) == "table" then
+        flatten_recursive(v, new_key .. ".")
+      elseif type(v) == "function" then
+        output_table[new_key] = tostring(v)
+      else
+        output_table[new_key] = v
+      end
+
+      ::continue::
+    end
+    visited[table_part] = nil
+  end
+
+    local initial_prefix = ""
+    if table_name then
+        initial_prefix = table_name .. "."
+    end
+
+  flatten_recursive(input_table, initial_prefix)
+  return output_table
+end
 
 
 -- Exported function
 function transform.separateTable(inputTable, name)
-    return separateTableRecursive(inputTable, name, {})
+    return flatten_mixed_table(inputTable, name)
 end
 
 -- Return the module
