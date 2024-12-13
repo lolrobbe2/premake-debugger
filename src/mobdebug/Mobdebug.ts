@@ -125,7 +125,7 @@ export class MobDebug {
     public async exec(statement:string): Promise<string> {
         const result:string = await this.sendCommand(new commands.ExecCommand(statement));
         if(this.getResultEnum(result) === Result.ok){
-            return result.split("\n")[1].replace(/\\{1,2}/g, '').replace(/""/g,"").replaceAll(/"Nested Table":\{([^{}]*)\}/g,'$1');
+            return result.split("\n")[1].replace(/\\{1,2}/g, '').replace(/""/g,"").replaceAll(/"Nested Table":\{([^{}]*)\}/g,'$1').replace(/:,/g, ",");
         }
         return result;
     }

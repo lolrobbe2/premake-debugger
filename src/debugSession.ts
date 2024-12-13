@@ -505,7 +505,9 @@ private removeNestedTableKeys(obj: JsonValue): JsonValue {
 			if(res.startsWith("401")){
 				return result;
 			} else {
-				return res;
+				fs.writeFileSync(`${new PremakeConfig().cwd}/response.json`, res, { encoding: "utf8" });
+
+				return JSON.parse(res);
 			}
 		} else {
 			return result;
@@ -541,13 +543,16 @@ private removeNestedTableKeys(obj: JsonValue): JsonValue {
 				const variable: Variable = new Variable(key,"",variablesReference,undefined,value.length);
 				this.variableStore.set(variablesReference,variable);
 				result.push(variable);
+				this.currentIndex++;
 				this.variableChildrenStore.set(variablesReference,this.addVariables(value,variablesReference));
+
 			} else if(typeof value === "object" && Array.isArray(value)){
 				//handle array
 				const variablesReference: number = this.currentIndex;
 				const variable: Variable = new Variable(key,"",variablesReference,value.length);
 				this.variableStore.set(variablesReference,variable);
 				const arrayItems:Variable[] = [];
+				this.currentIndex++;
 
 				value.forEach((item,index) => {
 					const localVariablesReference: number = this.currentIndex;
@@ -557,6 +562,12 @@ private removeNestedTableKeys(obj: JsonValue): JsonValue {
 				});
 				this.variableChildrenStore.set(variablesReference,arrayItems);
 				result.push(variable);
+			} else if(typeof value === "string"){
+				const variablesReference: number = this.currentIndex;
+				const variable: Variable = new Variable(key,value,0);
+				this.variableStore.set(variablesReference,variable);
+				result.push(variable);
+				this.currentIndex++;
 			}
 		}
 		return result;
