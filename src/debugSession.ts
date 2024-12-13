@@ -323,18 +323,13 @@ export class PremakeDebugSession extends LoggingDebugSession {
 	}
 	protected async scopesRequest(response: DebugProtocol.ScopesResponse, args: DebugProtocol.ScopesArguments): Promise<void> {
 		this.rootScopes = [];
+		this.variableStore = new Map();
+		this.variableChildrenStore = new Map();
+		this.variableLuaNames = new Map();
+
 		const currentStackFrame:StackTrace = this._stackTrace[0];
-		for(const field in currentStackFrame.params){
-			const scope:Scope = new Scope(field,this.currentIndex,true);
-
-			
-			const isSimple: boolean = this.isSimpleField(this.getFieldString(currentStackFrame.params[field]));
-			const fieldValue: string = isSimple ? this.getFieldString(currentStackFrame.params[field]) : "";
-			const ref: number = isSimple ? 0 : this.currentIndex;
-
-			const variable: Variable = new Variable(field,fieldValue,ref);
-			this.variableLuaNames.set(this.currentIndex,field);
-			this.variableStore.set(this.currentIndex,variable);
+		for (const stackFrame of this._stackTrace){
+			const scope:  Scope	= new Scope(stackFrame.name,this.currentIndex,false);
 			this.rootScopes.push(scope);
 			this.currentIndex++;
 			if(this.currentIndex >= 21)
@@ -344,37 +339,20 @@ export class PremakeDebugSession extends LoggingDebugSession {
 			}
 		}
 		this.currentIndex = 21;
-
-
+		for (const scope of this.rootScopes){
+			this.variableStore.set(scope.variablesReference,new Variable(scope.name,"",scope.variablesReference));
+			this.variableChildrenStore.set(scope.variablesReference,this.addScopeVariables(this._stackTrace[scope.variablesReference - 1]));
+		}
+		
 		response.body = {
 			scopes: this.rootScopes
 		};
     	this.sendResponse(response);
 	}
     protected async variablesRequest(response: DebugProtocol.VariablesResponse, args: DebugProtocol.VariablesArguments, request?: DebugProtocol.Request): Promise<void> {
-		
-		if(this.variableStore.has(args.variablesReference)){
-			const isSimple: boolean = this.variableStore.get(args.variablesReference)?.variablesReference === 0;
-			if(isSimple){
-				response.body = {
-					variables: [this.variableStore.get(args.variablesReference)!]
-				};
-			} else if(this.variableChildrenStore.has(args.variablesReference)) {
-				response.body = {
-					variables: this.variableChildrenStore.get(args.variablesReference)!
-				};
-				
-			} else {
-				const result: object | string = await this.resolveVariable(this.variableLuaNames.get(args.variablesReference)!);
-				if(typeof result === "object") {
-					const Variables: Variable[] = this.addVariables(result,args.variablesReference,this.variableLuaNames.get(args.variablesReference)!); 
-					this.variableChildrenStore.set(args.variablesReference,Variables);
-					response.body = {
-						variables: Variables
-					};
-				}
-			}
-		}
+		response.body = {
+			variables: await this.getVariablesByReference(args.variablesReference)
+		};
 		this.sendResponse(response);
 
 	}
@@ -582,5 +560,47 @@ private removeNestedTableKeys(obj: JsonValue): JsonValue {
 			}
 		}
 		return result;
+	}
+	private addScopeVariables(currentStackFrame:StackTrace): Variable[]{
+		const variables: Variable[] = [];
+		if(currentStackFrame === undefined || currentStackFrame.params === undefined) { return variables; }
+		for(const field in currentStackFrame.params){
+			const isSimple: boolean = this.isSimpleField(this.getFieldString(currentStackFrame.params[field]));
+			const fieldValue: string = isSimple ? this.getFieldString(currentStackFrame.params[field]) : "";
+			const ref: number = isSimple ? 0 : this.currentIndex;
+
+			const variable: Variable = new Variable(field,fieldValue,ref);
+			variables.push(variable);
+			this.variableLuaNames.set(this.currentIndex,field);
+			this.variableStore.set(this.currentIndex,variable);
+			this.currentIndex++;
+		}
+		return variables;
+	}
+	private async getVariablesByReference(variablesReference: number) : Promise<Variable[]> {
+		if(this.variableStore.has(variablesReference)){
+			const isSimple: boolean = this.variableStore.get(variablesReference)?.variablesReference === 0;
+			if(isSimple){
+				return [this.variableStore.get(variablesReference)!];
+				
+			} else if(this.variableChildrenStore.has(variablesReference)) {
+				const result:Variable[] = [];
+				const object = this.variableChildrenStore.get(variablesReference)?.find((variable) => variable.name === 'values' || variable.name === 'keyValues');
+				
+				if(object === undefined) { return this.variableChildrenStore.get(variablesReference)!; }
+				for(const variable of this.variableChildrenStore.get(variablesReference)!){ 
+					result.push(... await this.getVariablesByReference(variable.variablesReference));
+				}
+				return result;
+			} else {
+				const result: object | string = await this.resolveVariable(this.variableLuaNames.get(variablesReference)!);
+				if(typeof result === "object") {
+					const Variables: Variable[] = this.addVariables(result,variablesReference,this.variableLuaNames.get(variablesReference)!); 
+					this.variableChildrenStore.set(variablesReference,Variables);
+					return this.getVariablesByReference(variablesReference);
+				}
+			}
+		}
+		return [];
 	}
 }

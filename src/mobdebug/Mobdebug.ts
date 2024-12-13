@@ -28,6 +28,7 @@ export class StackTrace {
     get source(): Source { 
         return new Source(path.basename(this.fullPath),this.fullPath);
     }
+    get name(): string { return this.meta[5] === '' ? 'function' : this.meta[5]; }
 }
 
 export enum Result {
