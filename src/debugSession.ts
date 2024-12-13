@@ -498,7 +498,7 @@ private removeNestedTableKeys(obj: JsonValue): JsonValue {
 }
  private async resolveVariable(name: string) : Promise<object | string> {
 
-	name = name.replaceAll(".values",'').replaceAll(".keyValues",'');
+	name = name.replaceAll(".values",'').replaceAll(".keyValues",'').replace(/\.(\d+)/g, "[$1]");
 	const result: string = await this._mobDebugSession!.exec(`return tostring(${name})`);
 		if(result.startsWith("table")){
 			const absolutePath = path.resolve(__dirname, 'resources', 'json.lua').replaceAll("\\", "/");
