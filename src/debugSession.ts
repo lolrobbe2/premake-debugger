@@ -43,6 +43,7 @@ export class PremakeDebugSession extends LoggingDebugSession {
     private static threadID = 1;
 	private variableChildrenStore: Map<number, Variable[]> = new Map(); //stores variables by parent reference
 	private variableStore: Map<number, Variable> = new Map(); //stores variables by reference
+	private variableLuaNames: Map<number, string> = new Map();
 	private rootScopes:Scope[] = [];
 
 	readonly _configurationDone: Promise<void>;
@@ -332,8 +333,8 @@ export class PremakeDebugSession extends LoggingDebugSession {
 			const ref: number = isSimple ? 0 : this.currentIndex;
 
 			const variable: Variable = new Variable(field,fieldValue,ref);
-
-			this.variableStore.set(this.currentIndex,variable); 
+			this.variableLuaNames.set(this.currentIndex,field);
+			this.variableStore.set(this.currentIndex,variable);
 			this.rootScopes.push(scope);
 			this.currentIndex++;
 			if(this.currentIndex >= 21)
@@ -364,9 +365,9 @@ export class PremakeDebugSession extends LoggingDebugSession {
 				};
 				
 			} else {
-				const result: object | string = await this.resolveVariable(this.variableStore.get(args.variablesReference)!.name);
+				const result: object | string = await this.resolveVariable(this.variableLuaNames.get(args.variablesReference)!);
 				if(typeof result === "object") {
-					const Variables: Variable[] = this.addVariables(result,args.variablesReference); 
+					const Variables: Variable[] = this.addVariables(result,args.variablesReference,this.variableLuaNames.get(args.variablesReference)!); 
 					this.variableChildrenStore.set(args.variablesReference,Variables);
 					response.body = {
 						variables: Variables
@@ -496,6 +497,8 @@ private removeNestedTableKeys(obj: JsonValue): JsonValue {
     return obj;
 }
  private async resolveVariable(name: string) : Promise<object | string> {
+
+	name = name.replaceAll(".values",'').replaceAll(".keyValues",'');
 	const result: string = await this._mobDebugSession!.exec(`return tostring(${name})`);
 		if(result.startsWith("table")){
 			const absolutePath = path.resolve(__dirname, 'resources', 'json.lua').replaceAll("\\", "/");
@@ -534,22 +537,26 @@ private removeNestedTableKeys(obj: JsonValue): JsonValue {
 	/**
 	 * @brief adds the variable to the variable store and variableChildren store
 	 */
-	private addVariables(object: Object, parentVariablesReference:number) : Variable[]{
+	private addVariables(object: Object, parentVariablesReference:number,parentName:string): Variable[]{
 		const result:Variable[] = [];
 		for(const [key, value] of Object.entries(object)){
 			if(typeof value === "object" && !Array.isArray(value)){
 				//handle object
 				const variablesReference: number = this.currentIndex;
 				const variable: Variable = new Variable(key,"",variablesReference,undefined,value.length);
+				const varableLuaName:string = `${parentName}.${key}`;
+				this.variableLuaNames.set(variablesReference,varableLuaName);
 				this.variableStore.set(variablesReference,variable);
 				result.push(variable);
 				this.currentIndex++;
-				this.variableChildrenStore.set(variablesReference,this.addVariables(value,variablesReference));
+				this.variableChildrenStore.set(variablesReference,this.addVariables(value,variablesReference,varableLuaName));
 
 			} else if(typeof value === "object" && Array.isArray(value)){
 				//handle array
 				const variablesReference: number = this.currentIndex;
 				const variable: Variable = new Variable(key,"",variablesReference,value.length);
+				const varableLuaName:string = `${parentName}.${key}`;
+				this.variableLuaNames.set(variablesReference,varableLuaName);
 				this.variableStore.set(variablesReference,variable);
 				const arrayItems:Variable[] = [];
 				this.currentIndex++;
@@ -558,13 +565,17 @@ private removeNestedTableKeys(obj: JsonValue): JsonValue {
 					const localVariablesReference: number = this.currentIndex;
 					const itemVariable: Variable = new Variable(index.toString(),item,localVariablesReference,value.length);
 					arrayItems.push(itemVariable);
+					
 					this.currentIndex++;
 				});
 				this.variableChildrenStore.set(variablesReference,arrayItems);
 				result.push(variable);
 			} else if(typeof value === "string"){
 				const variablesReference: number = this.currentIndex;
-				const variable: Variable = new Variable(key,value,0);
+				const isTable:boolean = value.startsWith('table: ');
+				const variable: Variable = new Variable(key,isTable ? '' :value,isTable ? variablesReference : 0,isTable ? 2: undefined);
+				const varableLuaName:string = `${parentName}.${key}`;
+				this.variableLuaNames.set(variablesReference,varableLuaName);
 				this.variableStore.set(variablesReference,variable);
 				result.push(variable);
 				this.currentIndex++;
